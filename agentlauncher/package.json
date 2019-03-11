@@ -1,0 +1,9 @@
+{
+  "name": "agentlauncher",
+  "version": "0.0.1",
+  "description": "agentlauncher",
+  "main": "agentlauncher.js",
+  "author": {
+    "name": "Matt Primrose"
+  }
+}
