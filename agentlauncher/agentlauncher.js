@@ -28,18 +28,33 @@ const { spawn } = require('child_process');
 var agentLauncherVersion = '0.0.1';
 var currPlatform = {};
 var runningAgents = {};
+var currArguments = {};
 var actions = ["URL", "AGENTS", "STOP"];
 // Execute based on incoming arguments
 function run(argv) {
     var args = parseArguements(argv);
-    var goodArgs = validateArguments(args);
+    currArguments = validateArguments(args);
     //console.log("arguments good? " + goodArgs);
     getPlatformInfo();
+    if (currArguments.VALID == true) {
+        if (currArguments.STOP !== undefined) {
+            // Stop agents
+        } else {
+            // Create Directory and deploy agents
+            createDirectory(currPlatform, currArguments, function (data) {
+                if (data > 0) {
+                    exit(data);
+                } else {
+
+                }
+            });
+        }
+    }
 }
 // Parse arguements that are needed and put them in an object.  Discards invalid argument keys
 function parseArguements(argv) { var r = {}; for (var i in argv) { i = parseInt(i); if ((argv[i].toUpperCase() == actions[0]) || (argv[i].toUpperCase() == actions[1]) || (argv[i].toUpperCase() == actions[2])) { var key = argv[i].toUpperCase(); var val = true; if ((i + 1) < argv.length) { val = argv[i + 1]; } r[key] = val; } } return r; }
 // Verify that all arguement parameters are valid
-function validateArguments(args) { if ((Object.keys(args).length < 1) || (Object.keys(args).length > 2)) { consoleHelp(); exit(1); return; } if (Object.keys(args).length == 1) { if ((args["STOP"] === undefined) || (args["STOP"] !== true)) { consoleHelp(); exit(1); return; } } if (Object.keys(args).length == 2) { args["AGENTS"] = parseInt(args["AGENTS"], 10); if ((args["URL"] === undefined) || (args["URL"] === true) || (args["AGENTS"] === undefined) || (args["AGENTS"] === true) || (isNaN(args["AGENTS"]))) { consoleHelp(); exit(1); return; } } return true; }
+function validateArguments(args) { if ((Object.keys(args).length < 1) || (Object.keys(args).length > 2)) { consoleHelp(); args['VALID'] = false; exit(1); return args; } if (Object.keys(args).length == 1) { if ((args["STOP"] === undefined) || (args["STOP"] !== true)) { consoleHelp(); args['VALID'] = false; exit(1); return args; } } if (Object.keys(args).length == 2) { args["AGENTS"] = parseInt(args["AGENTS"], 10); if ((args["URL"] === undefined) || (args["URL"] === true) || (args["AGENTS"] === undefined) || (args["AGENTS"] === true) || (isNaN(args["AGENTS"]))) { consoleHelp(); args['VALID'] = false; exit(1); return args; } } args['VALID'] = true; return args; }
 // Exit code status return
 function exit(status) { if (status == null) { status = 0; } try { console.log("exiting application with code: " + status); process.exit(status); } catch (e) { } }
 // Download client agent and mesh policy from server
@@ -84,6 +99,40 @@ function lauchAgents(numAgents, location) {
         if (err) throw err;
         console.log('the file has been saved!');
     });
+}
+
+// Create agent install location
+function createDirectory(plat, args, callback) {
+    var code = 0;
+    var cwdArray = process.argv[1].split('/');
+    var cwd = "";
+    for (var i = 0; i < cwdArray.length - 1; i++) {
+        cwd = cwd + cwdArray[i].toString();
+    }
+    console.log(cwd);
+
+    switch (plat.PLATFORM) {
+        // Windows
+        case 'win32':
+            for (var i = 0; i < args.AGENTS; i++) {
+                fs.mkdir(cwd + '/agents/' + i.toString(), { recursive: true }, function (err) {
+                    fs.copyFile(cwd + '/agents/MeshAgent-test.exe', cwd + '/agents/' + i.toString() + '/MeshAgent-test.exe', function (err) {
+                    });
+                });
+            }
+            break;
+        // Linux
+        case 'linux':
+            break;
+        case 'darwin':
+            break;
+        // Unsupported Platform
+        default:
+            console.log('Unable to create agent installation directory.  Unsupported Platform.');
+            code = 1;
+            break;
+    }
+    callback(code);
 }
 
 // Start a single agent
