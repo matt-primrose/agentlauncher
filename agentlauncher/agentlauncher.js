@@ -27,9 +27,8 @@ const os = require('os');
 const { spawn } = require('child_process');
 var agentLauncherVersion = '0.0.1';
 var currPlatform = {};
-var runningAgents = {};
 var currArguments = {};
-var actions = ["URL", "AGENTS", "STOP"];
+var actions = ["URL", "AGENTS", "CLEANUP"];
 // Execute based on incoming arguments
 function run(argv) {
     var args = parseArguements(argv);
@@ -37,7 +36,7 @@ function run(argv) {
     //console.log("arguments good? " + goodArgs);
     getPlatformInfo();
     if (currArguments.VALID == true) {
-        if (currArguments.STOP !== undefined) {
+        if (currArguments.CLEANUP !== undefined) {
             // Stop agents
         } else {
             // Create Directory and deploy agents
@@ -45,7 +44,7 @@ function run(argv) {
                 if (data > 0) {
                     exit(data);
                 } else {
-
+                    lauchAgents(currArguments.AGENTS);
                 }
             });
         }
@@ -54,7 +53,7 @@ function run(argv) {
 // Parse arguements that are needed and put them in an object.  Discards invalid argument keys
 function parseArguements(argv) { var r = {}; for (var i in argv) { i = parseInt(i); if ((argv[i].toUpperCase() == actions[0]) || (argv[i].toUpperCase() == actions[1]) || (argv[i].toUpperCase() == actions[2])) { var key = argv[i].toUpperCase(); var val = true; if ((i + 1) < argv.length) { val = argv[i + 1]; } r[key] = val; } } return r; }
 // Verify that all arguement parameters are valid
-function validateArguments(args) { if ((Object.keys(args).length < 1) || (Object.keys(args).length > 2)) { consoleHelp(); args['VALID'] = false; exit(1); return args; } if (Object.keys(args).length == 1) { if ((args["STOP"] === undefined) || (args["STOP"] !== true)) { consoleHelp(); args['VALID'] = false; exit(1); return args; } } if (Object.keys(args).length == 2) { args["AGENTS"] = parseInt(args["AGENTS"], 10); if ((args["URL"] === undefined) || (args["URL"] === true) || (args["AGENTS"] === undefined) || (args["AGENTS"] === true) || (isNaN(args["AGENTS"]))) { consoleHelp(); args['VALID'] = false; exit(1); return args; } } args['VALID'] = true; return args; }
+function validateArguments(args) { if ((Object.keys(args).length < 1) || (Object.keys(args).length > 2)) { consoleHelp(); args['VALID'] = false; exit(1); return args; } if (Object.keys(args).length == 1) { if ((args["CLEANUP"] === undefined) || (args["CLEANUP"] !== true)) { consoleHelp(); args['VALID'] = false; exit(1); return args; } } if (Object.keys(args).length == 2) { args["AGENTS"] = parseInt(args["AGENTS"], 10); if ((args["URL"] === undefined) || (args["URL"] === true) || (args["AGENTS"] === undefined) || (args["AGENTS"] === true) || (isNaN(args["AGENTS"]))) { consoleHelp(); args['VALID'] = false; exit(1); return args; } } args['VALID'] = true; return args; }
 // Exit code status return
 function exit(status) { if (status == null) { status = 0; } try { console.log("exiting application with code: " + status); process.exit(status); } catch (e) { } }
 // Download client agent and mesh policy from server
@@ -71,7 +70,7 @@ function consoleHelp() {
     console.log('                     Example: URL http://www.meshcentral.com');
     console.log('  Agents           - Sets the number of agents to launch locally.  Default is 1.  Use with URL.');
     console.log('                     Example: Agents 10');
-    console.log('  Stop             - Stops all locally running MeshCentral 2 agents.  Do not use with other arguments.');
+    console.log('  Cleanup          - Removes agent directories and files.  Do not use with other arguments');
 }
 
 function getPlatformInfo() {
@@ -80,45 +79,50 @@ function getPlatformInfo() {
     return currPlatform;
 }
 
-function stopAgents() {
-    fs.readFile('runningAgents.txt', (err, data) => {
-        if (err) throw error;
-        runningAgents = JSON.parse(data);
-    });
-    for (var i in runningAgents) {
+/*function cleanupAgents() {
+    var cwd = __dirname + '\\agents\\';
+    for (var i = 0; i < in ) {
 
+    }
+}*/
+
+function lauchAgents(numAgents) {
+    for (var i = 0; i < numAgents; i++){
+        startAgent(i, function (data) {
+            if (data == 0) {
+                console.log('Agent: ' + i + ' started successfully');
+            } else {
+                console.log('Agent: ' + i + ' failed to start.  Code: ' + data);
+            }
+        });
     }
 }
 
-function lauchAgents(numAgents, location) {
-    runningAgents = {};
-    for (var i = 0; i < numAgents; i++){
-
-    }
-    fs.open('runningAgents.txt', JSON.stringify(runningAgents), (err) => {
-        if (err) throw err;
-        console.log('the file has been saved!');
+// Start a single agent
+function startAgent(directory, callback) {
+    console.log('Starting agent: ' + directory);
+    // Install Agent as service in this location
+    var meshAgent = spawn(__dirname + '\\agents\\' + directory + '\\MeshAgent-AgentLauncher.exe', ['run'], { stdio: 'inherit' }, (error) => {
+        if (error) {
+            console.log(error);
+            exit(1);
+        }
+    });
+    meshAgent.on('message', (message) => {
+        process.stdout.write(message);
     });
 }
 
 // Create agent install location
 function createDirectory(plat, args, callback) {
     var code = 0;
-    var cwdArray = process.argv[1].split('/');
-    var cwd = "";
-    for (var i = 0; i < cwdArray.length - 1; i++) {
-        cwd = cwd + cwdArray[i].toString();
-    }
-    console.log(cwd);
-
+    var cwd = __dirname;
     switch (plat.PLATFORM) {
         // Windows
         case 'win32':
             for (var i = 0; i < args.AGENTS; i++) {
-                fs.mkdir(cwd + '/agents/' + i.toString(), { recursive: true }, function (err) {
-                    fs.copyFile(cwd + '/agents/MeshAgent-test.exe', cwd + '/agents/' + i.toString() + '/MeshAgent-test.exe', function (err) {
-                    });
-                });
+                fs.mkdirSync(cwd + '/agents/' + i.toString());
+                fs.copyFileSync(cwd + '/agents/MeshAgent-AgentLauncher.exe', cwd + '/agents/' + i.toString() + '/MeshAgent-AgentLauncher.exe');
             }
             break;
         // Linux
@@ -135,42 +139,9 @@ function createDirectory(plat, args, callback) {
     callback(code);
 }
 
-// Start a single agent
-function startAgent(location) {
-    // Install Agent as service in this location
-    var options = {
-        cwd: location
-    };
-    var meshAgent = spawn('MeshAgent-AgentLauncher.exe', ['-install'], options);
-    meshAgent.stdout.on('data', (data) => {
-        console.log('stdout: ${data}');
-    });
-    meshAgent.stderr.on('data', (data) => {
-        console.log('stderr: ${data}');
-    });
-    meshAgent.on('close', (code) => {
-        console.log('Mesh Agent process exited with code ${code}');
-    });
+// Clean up agents, if any, on close
 
-}
-// Stop a single agent
-function stopAgent(location){
-    // Stop Service
-    var options = {
-        cwd: location
-    };
-    var meshAgent = spawn('MeshAgent-AgentLauncher.exe', ['-uninstall'], options);
-    meshAgent.stdout.on('data', (data) => {
-        console.log('stdout: ${data}');
-    });
-    meshAgent.stderr.on('data', (data) => {
-        console.log('stderr: ${data}');
-    });
-    meshAgent.on('close', (code) => {
-        console.log('Mesh Agent process exited with code ${code}');
-    });
-    // Uninstall Agent from this location
-}
+
 
 // Figure out if any arguments were provided, otherwise show help
 if (process.argv.length > 2) {
@@ -181,9 +152,10 @@ if (process.argv.length > 2) {
 }
 
 
-// Stop all running MC2 agents
+// CLEANUP all MC2 deployed agents
 function stopAllAgents() {
-    console.log('DEBUG: STOP command received');
+    console.log('DEBUG: CLEANUP command received');
+    cleanupAgents();
     exit(0); return;
 }
 
