@@ -6,8 +6,8 @@
 #		\agentlauncher\
 #		|-\agentlauncher\agentlauncher.js
 #		|-\agentlauncher\README.md
-#		|--\agentlauncher\agents\
-#		|---\agentlauncher\agents\MeshAgent-MeshGroup.exe
+#		|-|-\agentlauncher\agents\
+#		|-|--\agentlauncher\agents\MeshAgent-MeshGroup.exe
 #
 # Instructions to run:
 #	- Open a command prompt and navigate to the agentlauncher directory
@@ -15,4 +15,8 @@
 #	- Valid arguments are 'agents' <integer> and 'cleanup'
 #	- Ex: C:>\agentlauncher\node agentlauncher.js agents 10
 #	- Ex: C:>\agentlauncher\node agentlauncher.js cleanup 
+#
+# Best Practices:
+#	- Stopping and restarting with the same number of agents should work
+#	- Before changing the number of agents, it's best to run a 'cleanup' operation
 
