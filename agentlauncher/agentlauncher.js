@@ -155,7 +155,7 @@ function startAgent(directory) {
     var path = __dirname + '\\agents\\';
     fs.readdir(path + '\\' + directory, function (err, items) {
         if (err) { exit(1); return; }
-        var file;
+        var file; 
         console.log('Starting agent: ' + directory);
         items.forEach(function (fn) {
             switch (fn.substr(-3)) {
