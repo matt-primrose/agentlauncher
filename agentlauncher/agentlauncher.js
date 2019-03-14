@@ -79,14 +79,7 @@ function validateArguments(args) {
                 args['VALID'] = false;
                 exit(1);
                 return args;
-            
         } else {
-            //if ((args["URL"] === undefined) || (args["URL"] === true) || (args["AGENTS"] === undefined) || (args["AGENTS"] === true) || (isNaN(args["AGENTS"]))) {
-            //    consoleHelp();
-            //    args['VALID'] = false;
-            //    exit(1);
-            //   return args;
-            //}
             args['VALID'] = true;
             return args;
         }
@@ -122,29 +115,32 @@ function getPlatformInfo() {
 }
 
 function cleanupAgents() {
-    var topPath = __dirname + '\\agents\\';
-    var deleteFolderRecursive = function (path) {
-        if (fs.existsSync(path)) {
-            fs.readdirSync(path).forEach(function (file, index) {
-                var curPath = path + '\\' + file;
-                console.log('checking if ' + curPath + ' is a directory');
-                if (curPath !== topPath) {
-                    if (fs.lstatSync(curPath).isDirectory()) {
-                        console.log(curPath + ' is a directory.  Recurse!');
-                        deleteFolderRecursive(curPath);
-                    } else {
-                        console.log(curPath + ' is not a directory.\nunlinking ' + curPath);
-                        fs.unlinkSync(curPath);
-                    }
+    var path = __dirname + '\\agents\\';
+    if (fs.existsSync(path)) {
+        fs.readdirSync(path).forEach(function (file, index) {
+            var curPath = path + '\\' + file;
+            console.log('checking if ' + curPath + ' is a directory');
+            if (fs.lstatSync(curPath).isDirectory()) {
+                console.log(curPath + ' is a directory');
+                removeFiles(curPath);
+                if (curPath !== path) {
+                    fs.rmdirSync(curPath);
                 }
-            });
-            if (path !== topPath) {
-                console.log(path + ' is empty.  Removing directory');
-                fs.rmdirSync(path);
             }
-        }
+        });
+        console.log('all files and folders cleaned up!');
     }
-    deleteFolderRecursive(topPath);
+}
+
+function removeFiles(path) {
+    if (fs.existsSync(path)) {
+        console.log('reading files from ' + path);
+        fs.readdirSync(path).forEach(function (file, index) {
+            var curPath = path + '\\' + file;
+            console.log('removing ' + curPath);
+            fs.unlinkSync(curPath);
+        });
+    }
 }
 
 function launchAgents(numAgents) {
@@ -197,14 +193,18 @@ function createDirectory(args, callback) {
         if (err) { exit(1); return; }
         for (var i = 0; i < args.AGENTS; i++) {
             if (!fs.existsSync(cwd + '/agents/' + i.toString())) {
-                console.log('directory exists');
+                console.log('creating ' + i + ' directory');
                 fs.mkdirSync(cwd + '/agents/' + i.toString());
                 for (var x = 0; x < items.length; x++) {
                     if (!fs.existsSync(cwd + '/agents/' + i.toString() + '/' + items[x].toString())) {
-                        console.log('file exists');
+                        console.log('copying ' + items[x].toString());
                         fs.copyFileSync(cwd + '/agents/' + items[x].toString(), cwd + '/agents/' + i.toString() + '/' + items[x].toString());
+                    } else {
+                        console.log('file ' + items[x].toString() + ' exists');
                     }
                 }
+            } else {
+                console.log('directory ' + i + ' exists');
             }
         }
         callback(code);
