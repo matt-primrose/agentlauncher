@@ -34,7 +34,7 @@ function run(argv) {
     parseArguements(argv, function (err, args) {
         if (err) { exit(err); return; }
         // Validate that the arguements are good
-        var currArguments = validateArguments(args, function (err) {
+        validateArguments(args, function (err, currArguments) {
             if (err) { exit(err); return; }
             if (currArguments.VALID == true) {
                 if (currArguments.CLEANUP !== undefined) {
@@ -46,13 +46,18 @@ function run(argv) {
                 } else {
                     // Download agent and mesh file
                     var platInfo = getPlatformInfo();
+                    //debugObjectCheck(platInfo);
                     var platID = getPlatID(platInfo);
+                    //console.log('DEBUG: Platform ID: ' + platID);
                     downloadAgent(currArguments.URL, platID, function (err) {
                         if (err) {
                             exit(err);
                         } else {
                             // Parse mesh id from arguments and download mesh file from server
                             parseMeshID(currArguments, function (err, meshID) {
+                                if (err) {
+                                    exit(err);
+                                }
                                 downloadMeshFile(currArguments.URL, meshID, function (err) {
                                     if (err) {
                                         exit(err);
@@ -83,7 +88,7 @@ function parseArguements(argv, callback) {
     var r = {};
     for (var i in argv) {
         i = parseInt(i);
-        if ((argv[i].toUpperCase() == actions[0]) || (argv[i].toUpperCase() == actions[1]) || (argv[i].toUpperCase() == actions[2])) {
+        if ((argv[i].toUpperCase() == actions[0]) || (argv[i].toUpperCase() == actions[1]) || (argv[i].toUpperCase() == actions[2]) || (argv[i].toUpperCase() == actions[3])) {
             var key = argv[i].toUpperCase();
             var val = true;
             if ((i + 1) < argv.length) {
@@ -92,36 +97,35 @@ function parseArguements(argv, callback) {
             r[key] = val;
         }
     }
-    callback(r);
+    callback(null, r);
+}
+
+function debugObjectCheck(object) {
+    for (var i in object) {
+        console.log('DEBUG: ' + i + ' : ' + object[i]);
+    }
 }
 
 // Verify that all arguement parameters are valid
 function validateArguments(args, callback) {
-    if (Object.keys(args).length !== 1) {
+    if (args["AGENTS"] !== undefined) {
+        args["AGENTS"] = parseInt(args["AGENTS"], 10);
+    }
+    if (((args["CLEANUP"] === undefined) || (args["CLEANUP"] !== true)) && (((args["AGENTS"] === undefined) || (args["AGENTS"] === true) || (isNaN(args["AGENTS"]))) || ((args["URL"] === undefined) || (args["URL"] === true)) || ((args["MESHID"] === undefined) || (args["MESHID"] === true)))) {
         consoleHelp();
         args['VALID'] = false;
-        callback(2);
-        return args;
-    }
-    if (Object.keys(args).length == 1) {
-        args["AGENTS"] = parseInt(args["AGENTS"], 10);
-        if (((args["CLEANUP"] === undefined) || (args["CLEANUP"] !== true)) && (((args["AGENTS"] === undefined) || (args["AGENTS"] === true) || (isNaN(args["AGENTS"]))) || ((args["URL"] === undefined) || (args["URL"] === true)) || ((args["MESHID"] === undefined) || (args["MESHID"] === true)))) {
-                consoleHelp();
-                args['VALID'] = false;
-                callback(2);
-                return args;
-        } else {
-            args['VALID'] = true;
-            return args;
-        }
+        callback(2, args);
+    } else {
+        args['VALID'] = true;
+        callback(null, args);
     }
 }
 
 // Check MeshID or Mesh file present
 function parseMeshID(args, callback) {
-    cwd = __dirname + '\\agents\\';
+    var cwd = __dirname + '\\agents\\';
     if (args.MESHID.substr(-4) === '.txt') {
-        fs.readFileSync(cwd + args.MESHID, function (err, data) {
+        fs.readFile(cwd + args.MESHID, function (err, data) {
             if (err) { exit(err); return; }
             callback(null, data);
         });
@@ -132,16 +136,16 @@ function parseMeshID(args, callback) {
 // Exit code status return
 function exit(err) {
     if (err) {
-        try {
-            if (err.message !== undefined) {
-                console.log("exiting application with error: " + err.message);
-                process.exit(err);
-            } else {
-                console.log("exiting application with error: " + errorCodes[err]);
-            }
-        } catch (e) {
-            console.log(e.message);
+        var message = 'undefined';
+        if (err.message !== undefined) {
+            message = err.message;
+            process.exit(err);
+        } else if (errorCodes[err] !== undefined) {
+            message = errorCodes[err];
+        } else {
+            message = err;
         }
+        console.log("exiting application with error: " + message);
     }
 }
 
@@ -162,6 +166,7 @@ function consoleHelp() {
 
 // Queries the os Platform and returns the current platform information
 function getPlatformInfo() {
+    var currPlatform = {};
     currPlatform["PLATFORM"] = os.platform();
     currPlatform["RELEASE"] = os.release();
     currPlatform["ARCH"] = os.arch();
@@ -252,7 +257,7 @@ function startAgent(directory, callback) {
                     break;
             }
         });
-        var meshAgent = spawn(path + '\\' + file, ['run'], { stdio: 'inherit' }, (err) => {
+        var meshAgent = spawn(path + '\\' + file, ['connect'], { stdio: 'inherit' }, (err) => {
             if (err) {
                 callback(err);
             }
@@ -267,7 +272,7 @@ function startAgent(directory, callback) {
 // Create agent install location
 function createDirectory(args, callback) {
     var cwd = __dirname + '/agents/';
-    var items = getDirectory(cwd, function (err, list) {
+    var items = getDirectoryItems(cwd, function (err, list) {
         if (err) { callback(err); return; }
         for (var i = 0; i < args.AGENTS; i++) {
             if (!fs.existsSync(cwd + i.toString())) {
@@ -299,25 +304,39 @@ function getDirectoryItems(directory, callback) {
 
 // Download agent and mesh file
 function downloadAgent(url, platID, callback) {
-    var ddest = __dirname + '/agents/';
-    var file = fs.createWriteStream(ddest);
-    var request = http.get(url + '/meshagents?id=' + platID, function (res) {
-        res.pipe(file);
-        file.on('finish', function () {
-            file.close(callback);
+    var agentName = ['0', '1', '2', 'MeshAgent.exe', 'MeshAgent.exe', 'MeshAgent', 'MeshAgent'];
+    if (!fs.existsSync(__dirname + '/agents/')) {
+        fs.mkdirSync(__dirname + '/agents/');
+    }
+    var ddest = __dirname + '/agents/' + agentName[platID];
+    if (!fs.existsSync(ddest)) {
+        var file = fs.createWriteStream(ddest);
+        console.log('Downloading Mesh Agent from ' + url + '. Please Wait...');
+        var request = http.get(url + '/meshagents?id=' + platID, function (res) {
+            res.pipe(file);
+            file.on('finish', function () {
+                file.close(callback);
+            });
         });
-    });
+    } else {
+        callback(null);
+    }
 }
 
 function downloadMeshFile(url, meshID, callback) {
-    var ddest = __dirname + '/agents/';
-    var file = fs.createWriteStream(ddest);
-    var request = http.get(url + '/meshsettings?id=' + meshID, function (res) {
-        res.pipe(file);
-        file.on('finish', function () {
-            file.close(callback);
+    var ddest = __dirname + '/agents/MeshAgent.msh';
+    if (!fs.existsSync(ddest)) {
+        var file = fs.createWriteStream(ddest);
+        console.log('Downloading Mesh Policy from ' + url + '. Please Wait...');
+        var request = http.get(url + '/meshsettings?id=' + meshID, function (res) {
+            res.pipe(file);
+            file.on('finish', function () {
+                file.close(callback);
+            });
         });
-    });
+    } else {
+        callback(null);
+    }
 }
 
 // Figure out if any arguments were provided, otherwise show help
