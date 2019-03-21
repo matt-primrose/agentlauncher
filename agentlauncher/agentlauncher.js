@@ -17,40 +17,69 @@ limitations under the License.
 /** 
 * @description agentlauncher, command line tool for launching MeshCentral 2 agents.
 * @author Matt Primrose
-* @version v0.0.1
+* @version v0.0.2
 */
 
 'use strict';
 const fs = require('fs');
 const os = require('os');
+const http = require('http');
 const { spawn } = require('child_process');
-var agentLauncherVersion = '0.0.1';
-var currPlatform = {};
-var currArguments = {};
-var actions = [/*"URL",*/ "AGENTS", "CLEANUP"];
+var agentLauncherVersion = '0.0.2';
+var actions = ["MESHID", "URL", "AGENTS", "CLEANUP"];
+var errorCodes = ["No Error.", "Platform not supported.", "Arguement(s) not valid.",]
 // Execute based on incoming arguments
 function run(argv) {
-    var args = parseArguements(argv);
-    currArguments = validateArguments(args);
-    getPlatformInfo();
-    if (currArguments.VALID == true) {
-        if (currArguments.CLEANUP !== undefined) {
-            // Cleanup agents
-            cleanupAgents();
-        } else {
-            // Create Directory and deploy agents
-            createDirectory(currArguments, function (data) {
-                if (data > 0) {
-                    exit(data);
+    // Parse the arguements from the command line
+    parseArguements(argv, function (err, args) {
+        if (err) { exit(err); return; }
+        // Validate that the arguements are good
+        var currArguments = validateArguments(args, function (err) {
+            if (err) { exit(err); return; }
+            if (currArguments.VALID == true) {
+                if (currArguments.CLEANUP !== undefined) {
+                    // Cleanup agents
+                    cleanupAgents(function (err, message) {
+                        if (err) { exit(err); return; }
+                        console.log(message);
+                    });
                 } else {
-                    launchAgents(currArguments.AGENTS);
+                    // Download agent and mesh file
+                    var platInfo = getPlatformInfo();
+                    var platID = getPlatID(platInfo);
+                    downloadAgent(currArguments.URL, platID, function (err) {
+                        if (err) {
+                            exit(err);
+                        } else {
+                            // Parse mesh id from arguments and download mesh file from server
+                            parseMeshID(currArguments, function (err, meshID) {
+                                downloadMeshFile(currArguments.URL, meshID, function (err) {
+                                    if (err) {
+                                        exit(err);
+                                    }
+                                    // Create Directory and deploy agents
+                                    createDirectory(currArguments, function (err) {
+                                        if (err) {
+                                            exit(err);
+                                        } else {
+                                            launchAgents(currArguments.AGENTS, function (err) {
+                                                if (err) {
+                                                    exit(err);
+                                                }
+                                            });
+                                        }
+                                    });
+                                });
+                            });
+                        }
+                    });
                 }
-            });
-        }
-    }
+            }
+        });
+    });
 }
 // Parse arguements that are needed and put them in an object.  Discards invalid argument keys
-function parseArguements(argv) {
+function parseArguements(argv, callback) {
     var r = {};
     for (var i in argv) {
         i = parseInt(i);
@@ -62,22 +91,24 @@ function parseArguements(argv) {
             }
             r[key] = val;
         }
-    } return r;
+    }
+    callback(r);
 }
+
 // Verify that all arguement parameters are valid
-function validateArguments(args) {
+function validateArguments(args, callback) {
     if (Object.keys(args).length !== 1) {
         consoleHelp();
         args['VALID'] = false;
-        exit(1);
+        callback(2);
         return args;
     }
     if (Object.keys(args).length == 1) {
         args["AGENTS"] = parseInt(args["AGENTS"], 10);
-        if (((args["CLEANUP"] === undefined) || (args["CLEANUP"] !== true)) && ((args["AGENTS"] === undefined) || (args["AGENTS"] === true) || (isNaN(args["AGENTS"])))) {
+        if (((args["CLEANUP"] === undefined) || (args["CLEANUP"] !== true)) && (((args["AGENTS"] === undefined) || (args["AGENTS"] === true) || (isNaN(args["AGENTS"]))) || ((args["URL"] === undefined) || (args["URL"] === true)) || ((args["MESHID"] === undefined) || (args["MESHID"] === true)))) {
                 consoleHelp();
                 args['VALID'] = false;
-                exit(1);
+                callback(2);
                 return args;
         } else {
             args['VALID'] = true;
@@ -85,36 +116,81 @@ function validateArguments(args) {
         }
     }
 }
-// Exit code status return
-function exit(status) {
-    if (status == null) {
-        status = 0;
+
+// Check MeshID or Mesh file present
+function parseMeshID(args, callback) {
+    cwd = __dirname + '\\agents\\';
+    if (args.MESHID.substr(-4) === '.txt') {
+        fs.readFileSync(cwd + args.MESHID, function (err, data) {
+            if (err) { exit(err); return; }
+            callback(null, data);
+        });
+    } else {
+        callback(null, args.MESHID);
     }
-    try {
-        console.log("exiting application with code: " + status);
-        process.exit(status);
-    } catch (e) { }
+}
+// Exit code status return
+function exit(err) {
+    if (err) {
+        try {
+            if (err.message !== undefined) {
+                console.log("exiting application with error: " + err.message);
+                process.exit(err);
+            } else {
+                console.log("exiting application with error: " + errorCodes[err]);
+            }
+        } catch (e) {
+            console.log(e.message);
+        }
+    }
 }
 
+// Console help instructions
 function consoleHelp() {
     console.log('Agent Launcher for MeshCentral 2.  Version: ' + agentLauncherVersion);
     console.log('No action or invalid action specified, use agentlauncher like this:\r\n');
     console.log('  agentlauncher [action] [arguments...]\r\n');
     console.log('Valid agentlauncher actions:\r\n');
-    //console.log('  URL              - Sets the URL for the MeshCentral 2 Server to retrieve agents.  Use with Agents.');
-    //console.log('                     Example: URL http://www.meshcentral.com');
-    console.log('  Agents           - Sets the number of agents to launch locally.  Default is 1.  Use with URL.');
+    console.log('  URL              - Sets the URL for the MeshCentral 2 Server to retrieve agents.  Use with Agents and MeshID.');
+    console.log('                     Example: URL http://meshcentral.com');
+    console.log('  Agents           - Sets the number of agents to launch locally.  Default is 1.  Use with URL and MeshID.');
     console.log('                     Example: Agents 10');
+    console.log('  MeshID           - Specifies the .txt file that contains the MeshID or the 64 character MeshID.  Use with URL and Agents.');
+    console.log('                     Example: MeshID text.txt or MeshID Zg5GYnoysKG6QRFa4EVeT498a3lG1k@dpTXf0ijf6g9BNi6aIX92xxo$gW8mYrGK');
     console.log('  Cleanup          - Removes agent directories and files.  Do not use with other arguments');
 }
 
+// Queries the os Platform and returns the current platform information
 function getPlatformInfo() {
     currPlatform["PLATFORM"] = os.platform();
     currPlatform["RELEASE"] = os.release();
+    currPlatform["ARCH"] = os.arch();
     return currPlatform;
 }
 
-function cleanupAgents() {
+// Figures out which agent to download from the server
+function getPlatID(platInfo) {
+    if ((platInfo.ARCH === 'x64') || (platInfo.ARCH === 'arm64')) {
+        switch (platInfo.PLATFORM) {
+            case 'win32':
+                return 4;
+            case 'linux':
+                return 6;
+        }
+    } else if ((platInfo.ARCH === 'x32') || (platInfo.ARCH === 'arm')) {
+        switch (platInfo.PLATFORM) {
+            case 'win32':
+                return 3;
+            case 'linux':
+                return 5;
+        }
+    } else {
+        exit(2);
+    }
+}
+
+// Digs through agents directory and removes files and folders
+function cleanupAgents(callback) {
     var path = __dirname + '\\agents\\';
     if (fs.existsSync(path)) {
         fs.readdirSync(path).forEach(function (file, index) {
@@ -128,10 +204,11 @@ function cleanupAgents() {
                 }
             }
         });
-        console.log('all files and folders cleaned up!');
+        callback(null, 'all files and folders cleaned up!');
     }
 }
 
+// Removes any files at path location
 function removeFiles(path) {
     if (fs.existsSync(path)) {
         console.log('reading files from ' + path);
@@ -143,18 +220,21 @@ function removeFiles(path) {
     }
 }
 
-function launchAgents(numAgents) {
+// Loop for launching a specific number of agents
+function launchAgents(numAgents, callback) {
     console.log('launching Agents');
     for (var i = 0; i < numAgents; i++){
-        startAgent(i);
+        startAgent(i, function (err) {
+            if (err) { callback(err); return; }
+        });
     }
 }
 
 // Start a single Windows agent
-function startAgent(directory) {
-    var path = __dirname + '\\agents\\';
-    fs.readdir(path + '\\' + directory, function (err, items) {
-        if (err) { exit(1); return; }
+function startAgent(directory, callback) {
+    var path = __dirname + '\\agents\\' + directory;
+    var list = getDirectoryItems(path, function (err, items) {
+        if (err) { callback(err); return; }
         var file; 
         console.log('Starting agent: ' + directory);
         items.forEach(function (fn) {
@@ -172,10 +252,9 @@ function startAgent(directory) {
                     break;
             }
         });
-        var meshAgent = spawn(path + '\\' + directory + '\\' + file, ['run'], { stdio: 'inherit' }, (error) => {
-            if (error) {
-                console.log(error);
-                exit(1);
+        var meshAgent = spawn(path + '\\' + file, ['run'], { stdio: 'inherit' }, (err) => {
+            if (err) {
+                callback(err);
             }
         });
         meshAgent.on('message', (message) => {
@@ -187,27 +266,57 @@ function startAgent(directory) {
 
 // Create agent install location
 function createDirectory(args, callback) {
-    var code = 0;
-    var cwd = __dirname;
-    fs.readdir(__dirname + '/agents/', function (err, items) {
-        if (err) { exit(1); return; }
+    var cwd = __dirname + '/agents/';
+    var items = getDirectory(cwd, function (err, list) {
+        if (err) { callback(err); return; }
         for (var i = 0; i < args.AGENTS; i++) {
-            if (!fs.existsSync(cwd + '/agents/' + i.toString())) {
+            if (!fs.existsSync(cwd + i.toString())) {
                 console.log('creating ' + i + ' directory');
-                fs.mkdirSync(cwd + '/agents/' + i.toString());
-                for (var x = 0; x < items.length; x++) {
-                    if (!fs.existsSync(cwd + '/agents/' + i.toString() + '/' + items[x].toString())) {
-                        console.log('copying ' + items[x].toString());
-                        fs.copyFileSync(cwd + '/agents/' + items[x].toString(), cwd + '/agents/' + i.toString() + '/' + items[x].toString());
+                fs.mkdirSync(cwd + i.toString());
+                for (var x = 0; x < list.length; x++) {
+                    if (!fs.existsSync(cwd + i.toString() + '/' + list[x].toString())) {
+                        console.log('copying ' + list[x].toString());
+                        fs.copyFileSync(cwd + list[x].toString(), cwd + i.toString() + '/' + list[x].toString());
                     } else {
-                        console.log('file ' + items[x].toString() + ' exists');
+                        console.log('file ' + list[x].toString() + ' exists');
                     }
                 }
             } else {
                 console.log('directory ' + i + ' exists');
             }
         }
-        callback(code);
+        callback(null);
+    });
+}
+
+// Utility funtcion for getting the contents of a directory
+function getDirectoryItems(directory, callback) {
+    fs.readdir(directory, function (err, items) {
+        if (err) { callback(err); return; }
+        callback(null, items);
+    });
+}
+
+// Download agent and mesh file
+function downloadAgent(url, platID, callback) {
+    var ddest = __dirname + '/agents/';
+    var file = fs.createWriteStream(ddest);
+    var request = http.get(url + '/meshagents?id=' + platID, function (res) {
+        res.pipe(file);
+        file.on('finish', function () {
+            file.close(callback);
+        });
+    });
+}
+
+function downloadMeshFile(url, meshID, callback) {
+    var ddest = __dirname + '/agents/';
+    var file = fs.createWriteStream(ddest);
+    var request = http.get(url + '/meshsettings?id=' + meshID, function (res) {
+        res.pipe(file);
+        file.on('finish', function () {
+            file.close(callback);
+        });
     });
 }
 
@@ -216,5 +325,5 @@ if (process.argv.length > 2) {
     run(process.argv);
 } else {
     consoleHelp();
-    exit(1); return;
+    exit(2); return;
 }
