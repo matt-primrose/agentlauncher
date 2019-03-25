@@ -123,7 +123,7 @@ function validateArguments(args, callback) {
 
 // Check MeshID or Mesh file present
 function parseMeshID(args, callback) {
-    var cwd = __dirname + '\\agents\\';
+    var cwd = __dirname + '/agents/';
     if (args.MESHID.substr(-4) === '.txt') {
         fs.readFile(cwd + args.MESHID, function (err, data) {
             if (err) { exit(err); return; }
@@ -196,10 +196,10 @@ function getPlatID(platInfo) {
 
 // Digs through agents directory and removes files and folders
 function cleanupAgents(callback) {
-    var path = __dirname + '\\agents\\';
+    var path = __dirname + '/agents/';
     if (fs.existsSync(path)) {
         fs.readdirSync(path).forEach(function (file, index) {
-            var curPath = path + '\\' + file;
+            var curPath = path + '/' + file;
             console.log('checking if ' + curPath + ' is a directory');
             if (fs.lstatSync(curPath).isDirectory()) {
                 console.log(curPath + ' is a directory');
@@ -218,7 +218,7 @@ function removeFiles(path) {
     if (fs.existsSync(path)) {
         console.log('reading files from ' + path);
         fs.readdirSync(path).forEach(function (file, index) {
-            var curPath = path + '\\' + file;
+            var curPath = path + '/' + file;
             console.log('removing ' + curPath);
             fs.unlinkSync(curPath);
         });
@@ -237,7 +237,7 @@ function launchAgents(numAgents, callback) {
 
 // Start a single Windows agent
 function startAgent(directory, callback) {
-    var path = __dirname + '\\agents\\' + directory;
+    var path = __dirname + '/agents/' + directory;
     var list = getDirectoryItems(path, function (err, items) {
         if (err) { callback(err); return; }
         var file; 
@@ -245,7 +245,7 @@ function startAgent(directory, callback) {
         items.forEach(function (fn) {
             switch (fn.substr(-3)) {
                 // Linux Agent
-                case '.sh':
+                case 'ent':
                     file = fn;
                     break;
                 // Windows Agent
@@ -257,7 +257,7 @@ function startAgent(directory, callback) {
                     break;
             }
         });
-        var meshAgent = spawn(path + '\\' + file, ['connect'], { stdio: 'inherit' }, (err) => {
+        var meshAgent = spawn(path + '/' + file, ['connect'], { stdio: 'inherit' }, (err) => {
             if (err) {
                 callback(err);
             }
@@ -315,6 +315,12 @@ function downloadAgent(url, platID, callback) {
         var request = http.get(url + '/meshagents?id=' + platID, function (res) {
             res.pipe(file);
             file.on('finish', function () {
+                console.log('Download complete!');
+                var currPlatform = getPlatformInfo();
+                if (currPlatform.PLATFORM === 'linux') {
+                    console.log('Setting Permissions on file');
+                    fs.chmodSync(ddest, 0o755);
+                }
                 file.close(callback);
             });
         });
