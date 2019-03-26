@@ -26,7 +26,7 @@ const os = require('os');
 const http = require('http');
 const { spawn } = require('child_process');
 var agentLauncherVersion = '0.0.3';
-var actions = ['MESHID', 'URL', 'AGENTS', 'CLEANUP'];
+var actions = ['MESHID', 'URL', 'AGENTS', 'CLEANUP', 'TOGGLE'];
 var errorCodes = ['No Error.', 'Platform not supported.', 'Arguement(s) not valid.']
 var childProcesses = [];
 // Execute based on incoming arguments
@@ -89,7 +89,7 @@ function parseArguements(argv, callback) {
     var r = {};
     for (var i in argv) {
         i = parseInt(i);
-        if ((argv[i].toUpperCase() == actions[0]) || (argv[i].toUpperCase() == actions[1]) || (argv[i].toUpperCase() == actions[2]) || (argv[i].toUpperCase() == actions[3])) {
+        if ((argv[i].toUpperCase() == actions[0]) || (argv[i].toUpperCase() == actions[1]) || (argv[i].toUpperCase() == actions[2]) || (argv[i].toUpperCase() == actions[3]) || (argv[i].toUpperCase() == actions[4])) {
             var key = argv[i].toUpperCase();
             var val = true;
             if ((i + 1) < argv.length) { val = argv[i + 1]; }
@@ -104,7 +104,10 @@ function debugObjectCheck(object) { for (var i in object) { console.log('DEBUG: 
 // Verify that all arguement parameters are valid
 function validateArguments(args, callback) {
     if (args["AGENTS"] !== undefined) { args["AGENTS"] = parseInt(args["AGENTS"], 10); }
-    if (((args["CLEANUP"] === undefined) || (args["CLEANUP"] !== true)) && (((args["AGENTS"] === undefined) || (args["AGENTS"] === true) || (isNaN(args["AGENTS"]))) || ((args["URL"] === undefined) || (args["URL"] === true)) || ((args["MESHID"] === undefined) || (args["MESHID"] === true)))) { consoleHelp(); args['VALID'] = false; callback(2, args); }
+    if (((args["CLEANUP"] === undefined) || (args["CLEANUP"] !== true)) && (((args["AGENTS"] === undefined) || (args["AGENTS"] === true) || (isNaN(args["AGENTS"]))) || ((args["URL"] === undefined) || (args["URL"] === true)) || ((args["MESHID"] === undefined) || (args["MESHID"] === true)))) {
+        consoleHelp(); args['VALID'] = false;
+        callback(2, args);
+    }
     else { args['VALID'] = true; callback(null, args); }
 }
 
@@ -142,7 +145,14 @@ function consoleHelp() {
     console.log('                     Example: Agents 10');
     console.log('  MeshID           - Specifies the .txt file that contains the MeshID or the 64 character MeshID.  Use with URL and Agents.');
     console.log('                     Example: MeshID text.txt or MeshID Zg5GYnoysKG6QRFa4EVeT498a3lG1k@dpTXf0ijf6g9BNi6aIX92xxo$gW8mYrGK');
+    console.log('  Toggle           - Randomly stops and starts agents.  Use with URL, Agents, and MeshID');
     console.log('  Cleanup          - Removes agent directories and files.  Do not use with other arguments');
+}
+
+// Console Report of Agent Launch
+function reportLaunchSummary() {
+    console.log('Agent Launch Sequence Complete! \n');
+    console.log('Number of Agents Launched: ' + childProcesses.length);
 }
 
 // Queries the os Platform and returns the current platform information
@@ -216,6 +226,9 @@ function launchAgents(numAgents, callback) {
     for (var i = 0; i < numAgents; i++){
         startAgent(i, function (err) {
             if (err) { callback(err); return; }
+            if (i === (numAgents - 1)) {
+                reportLaunchSummary();
+            }
         });
     }
 }
@@ -243,11 +256,11 @@ function startAgent(directory, callback) {
             }
         });
         var meshAgent = spawn(path + '/' + file, ['connect'], { stdio: 'inherit' }, (err) => { if (err) { callback(err); }});
-        meshAgent.on('message', (message) => { process.stdout.write(message); });
-        meshAgent.on('exit', (code, signal) => { if (code) { process.stdout.write('Agent exited with code: ' + code); } if (signal) { process.stdout.write('Agent exited with signal: ' + signal); }});
-        meshAgent.on('error', (err) => { if (err) { process.stdout.write('Agent exited with error: ' + err); }});
-        meshAgent.on('close', (code, signal) => { if (code) { process.stdout.write('Agent closed with code: ' + code); } if (signal) { process.stdout.write('Agent closed with signal: ' + signal); }});
-        meshAgent.on('disconnect', () => { process.stdout.write('Agent disconnected'); });
+        meshAgent.on('message', (message) => { process.stdout.write(message + '\n'); });
+        meshAgent.on('exit', (code, signal) => { if (code) { process.stdout.write('Agent exited with code: ' + code + '\n'); } if (signal) { process.stdout.write('Agent exited with signal: ' + signal + '\n'); }});
+        meshAgent.on('error', (err) => { if (err) { process.stdout.write('Agent exited with error: ' + err + '\n'); }});
+        meshAgent.on('close', (code, signal) => { if (code) { process.stdout.write('Agent closed with code: ' + code + '\n'); } if (signal) { process.stdout.write('Agent closed with signal: ' + signal + '\n'); }});
+        meshAgent.on('disconnect', () => { process.stdout.write('Agent disconnected' + '\n'); });
         childProcesses.push({ 'directory': directory, 'child_Process': meshAgent });
     });
 }
