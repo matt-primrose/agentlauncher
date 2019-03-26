@@ -17,7 +17,7 @@ limitations under the License.
 /** 
 * @description agentlauncher, command line tool for launching MeshCentral 2 agents.
 * @author Matt Primrose
-* @version v0.0.2
+* @version v0.0.3
 */
 
 'use strict';
@@ -25,9 +25,10 @@ const fs = require('fs');
 const os = require('os');
 const http = require('http');
 const { spawn } = require('child_process');
-var agentLauncherVersion = '0.0.2';
-var actions = ["MESHID", "URL", "AGENTS", "CLEANUP"];
-var errorCodes = ["No Error.", "Platform not supported.", "Arguement(s) not valid.",]
+var agentLauncherVersion = '0.0.3';
+var actions = ['MESHID', 'URL', 'AGENTS', 'CLEANUP'];
+var errorCodes = ['No Error.', 'Platform not supported.', 'Arguement(s) not valid.']
+var childProcesses = [];
 // Execute based on incoming arguments
 function run(argv) {
     // Parse the arguements from the command line
@@ -91,47 +92,27 @@ function parseArguements(argv, callback) {
         if ((argv[i].toUpperCase() == actions[0]) || (argv[i].toUpperCase() == actions[1]) || (argv[i].toUpperCase() == actions[2]) || (argv[i].toUpperCase() == actions[3])) {
             var key = argv[i].toUpperCase();
             var val = true;
-            if ((i + 1) < argv.length) {
-                val = argv[i + 1];
-            }
+            if ((i + 1) < argv.length) { val = argv[i + 1]; }
             r[key] = val;
         }
     }
     callback(null, r);
 }
 
-function debugObjectCheck(object) {
-    for (var i in object) {
-        console.log('DEBUG: ' + i + ' : ' + object[i]);
-    }
-}
+function debugObjectCheck(object) { for (var i in object) { console.log('DEBUG: ' + i + ' : ' + object[i]); } }
 
 // Verify that all arguement parameters are valid
 function validateArguments(args, callback) {
-    if (args["AGENTS"] !== undefined) {
-        args["AGENTS"] = parseInt(args["AGENTS"], 10);
-    }
-    if (((args["CLEANUP"] === undefined) || (args["CLEANUP"] !== true)) && (((args["AGENTS"] === undefined) || (args["AGENTS"] === true) || (isNaN(args["AGENTS"]))) || ((args["URL"] === undefined) || (args["URL"] === true)) || ((args["MESHID"] === undefined) || (args["MESHID"] === true)))) {
-        consoleHelp();
-        args['VALID'] = false;
-        callback(2, args);
-    } else {
-        args['VALID'] = true;
-        callback(null, args);
-    }
+    if (args["AGENTS"] !== undefined) { args["AGENTS"] = parseInt(args["AGENTS"], 10); }
+    if (((args["CLEANUP"] === undefined) || (args["CLEANUP"] !== true)) && (((args["AGENTS"] === undefined) || (args["AGENTS"] === true) || (isNaN(args["AGENTS"]))) || ((args["URL"] === undefined) || (args["URL"] === true)) || ((args["MESHID"] === undefined) || (args["MESHID"] === true)))) { consoleHelp(); args['VALID'] = false; callback(2, args); }
+    else { args['VALID'] = true; callback(null, args); }
 }
 
 // Check MeshID or Mesh file present
 function parseMeshID(args, callback) {
     var cwd = __dirname + '/agents/';
-    if (args.MESHID.substr(-4) === '.txt') {
-        fs.readFile(cwd + args.MESHID, function (err, data) {
-            if (err) { exit(err); return; }
-            callback(null, data);
-        });
-    } else {
-        callback(null, args.MESHID);
-    }
+    if (args.MESHID.substr(-4) === '.txt') { fs.readFile(cwd + args.MESHID, function (err, data) { if (err) { exit(err); return; } callback(null, data); });}
+    else { callback(null, args.MESHID); }
 }
 // Exit code status return
 function exit(err) {
@@ -181,6 +162,8 @@ function getPlatID(platInfo) {
                 return 4;
             case 'linux':
                 return 6;
+            default:
+                return 0;
         }
     } else if ((platInfo.ARCH === 'x32') || (platInfo.ARCH === 'arm')) {
         switch (platInfo.PLATFORM) {
@@ -188,6 +171,8 @@ function getPlatID(platInfo) {
                 return 3;
             case 'linux':
                 return 5;
+            default:
+                return 0;
         }
     } else {
         exit(2);
@@ -257,15 +242,22 @@ function startAgent(directory, callback) {
                     break;
             }
         });
-        var meshAgent = spawn(path + '/' + file, ['connect'], { stdio: 'inherit' }, (err) => {
-            if (err) {
-                callback(err);
-            }
-        });
-        meshAgent.on('message', (message) => {
-            process.stdout.write(message);
-        });
-        
+        var meshAgent = spawn(path + '/' + file, ['connect'], { stdio: 'inherit' }, (err) => { if (err) { callback(err); }});
+        meshAgent.on('message', (message) => { process.stdout.write(message); });
+        meshAgent.on('exit', (code, signal) => { if (code) { process.stdout.write('Agent exited with code: ' + code); } if (signal) { process.stdout.write('Agent exited with signal: ' + signal); }});
+        meshAgent.on('error', (err) => { if (err) { process.stdout.write('Agent exited with error: ' + err); }});
+        meshAgent.on('close', (code, signal) => { if (code) { process.stdout.write('Agent closed with code: ' + code); } if (signal) { process.stdout.write('Agent closed with signal: ' + signal); }});
+        meshAgent.on('disconnect', () => { process.stdout.write('Agent disconnected'); });
+        childProcesses.push({ 'directory': directory, 'child_Process': meshAgent });
+    });
+}
+
+// Kill and restart agent
+function toggleChildProcess(index) {
+    var directory = childProcesses[index].directory;
+    childProcesses[index].child_Process.subprocess.kill(childProcesses[index].child_Process.subprocess.pid);
+    childProcesses[index].child_Process.on('exit', function (code, signal) {
+
     });
 }
 
@@ -295,12 +287,7 @@ function createDirectory(args, callback) {
 }
 
 // Utility funtcion for getting the contents of a directory
-function getDirectoryItems(directory, callback) {
-    fs.readdir(directory, function (err, items) {
-        if (err) { callback(err); return; }
-        callback(null, items);
-    });
-}
+function getDirectoryItems(directory, callback) { fs.readdir(directory, function (err, items) { if (err) { callback(err); return; } callback(null, items); }); }
 
 // Download agent and mesh file
 function downloadAgent(url, platID, callback) {
@@ -324,11 +311,10 @@ function downloadAgent(url, platID, callback) {
                 file.close(callback);
             });
         });
-    } else {
-        callback(null);
-    }
+    } else { callback(null); }
 }
 
+// Download mesh file from server
 function downloadMeshFile(url, meshID, callback) {
     var ddest = __dirname + '/agents/MeshAgent.msh';
     if (!fs.existsSync(ddest)) {
@@ -340,9 +326,7 @@ function downloadMeshFile(url, meshID, callback) {
                 file.close(callback);
             });
         });
-    } else {
-        callback(null);
-    }
+    } else { callback(null); }
 }
 
 // Figure out if any arguments were provided, otherwise show help
