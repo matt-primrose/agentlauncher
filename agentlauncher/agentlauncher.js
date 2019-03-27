@@ -113,8 +113,8 @@ function validateArguments(args, callback) {
 
 // Check MeshID or Mesh file present
 function parseMeshID(args, callback) {
-    var cwd = __dirname + '/agents/';
-    if (args.MESHID.substr(-4) === '.txt') { fs.readFile(cwd + args.MESHID, function (err, data) { if (err) { exit(err); return; } callback(null, data); });}
+    var cwd = __dirname;
+    if (args.MESHID.substr(-4) === '.txt') { fs.readFile(cwd + '/' + args.MESHID, function (err, data) { if (err) { exit(err); return; } callback(null, data); }); }
     else { callback(null, args.MESHID); }
 }
 // Exit code status return
@@ -150,9 +150,10 @@ function consoleHelp() {
 }
 
 // Console Report of Agent Launch
-function reportLaunchSummary() {
-    console.log('Agent Launch Sequence Complete! \n');
+function reportLaunchSummary(index) {
     console.log('Number of Agents Launched: ' + childProcesses.length);
+    console.log('Agent Directory: ' + childProcesses[index].directory);
+    console.log('Agent PID: ' + childProcesses[index].child_Process.subprocess.pid);
 }
 
 // Queries the os Platform and returns the current platform information
@@ -224,11 +225,9 @@ function removeFiles(path) {
 function launchAgents(numAgents, callback) {
     console.log('launching Agents');
     for (var i = 0; i < numAgents; i++){
-        startAgent(i, function (err) {
+        if (i === numAgents - 1) { last = true; }
+        startAgent(i, function (err, directory) {
             if (err) { callback(err); return; }
-            if (i === (numAgents - 1)) {
-                reportLaunchSummary();
-            }
         });
     }
 }
@@ -236,7 +235,7 @@ function launchAgents(numAgents, callback) {
 // Start a single Windows agent
 function startAgent(directory, callback) {
     var path = __dirname + '/agents/' + directory;
-    var list = getDirectoryItems(path, function (err, items) {
+    getDirectoryItems(path, function (err, items) {
         if (err) { callback(err); return; }
         var file; 
         console.log('Starting agent: ' + directory);
@@ -255,13 +254,14 @@ function startAgent(directory, callback) {
                     break;
             }
         });
-        var meshAgent = spawn(path + '/' + file, ['connect'], { stdio: 'inherit' }, (err) => { if (err) { callback(err); }});
+        var meshAgent = spawn(path + '/' + file, ['connect'], { stdio: 'inherit' }, function (err) { if (err) { callback(err); } });
         meshAgent.on('message', (message) => { process.stdout.write(message + '\n'); });
         meshAgent.on('exit', (code, signal) => { if (code) { process.stdout.write('Agent exited with code: ' + code + '\n'); } if (signal) { process.stdout.write('Agent exited with signal: ' + signal + '\n'); }});
         meshAgent.on('error', (err) => { if (err) { process.stdout.write('Agent exited with error: ' + err + '\n'); }});
         meshAgent.on('close', (code, signal) => { if (code) { process.stdout.write('Agent closed with code: ' + code + '\n'); } if (signal) { process.stdout.write('Agent closed with signal: ' + signal + '\n'); }});
         meshAgent.on('disconnect', () => { process.stdout.write('Agent disconnected' + '\n'); });
         childProcesses.push({ 'directory': directory, 'child_Process': meshAgent });
+        reportLaunchSummary(childProcesses.length - 1);
     });
 }
 
@@ -305,8 +305,9 @@ function getDirectoryItems(directory, callback) { fs.readdir(directory, function
 // Download agent and mesh file
 function downloadAgent(url, platID, callback) {
     var agentName = ['0', '1', '2', 'MeshAgent.exe', 'MeshAgent.exe', 'MeshAgent', 'MeshAgent'];
-    if (!fs.existsSync(__dirname + '/agents/')) {
-        fs.mkdirSync(__dirname + '/agents/');
+    if (!fs.existsSync(__dirname + '/agents')) {
+        console.log('Creating agents directory');
+        fs.mkdirSync(__dirname + '/agents');
     }
     var ddest = __dirname + '/agents/' + agentName[platID];
     if (!fs.existsSync(ddest)) {
