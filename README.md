@@ -1,15 +1,4 @@
 ﻿# Agent Launcher
-INSTRUCTIONS FOR USE:
--------------------------------------------------------
-*	Prior to launching, verify that you have an 'agents' subdirectory in the same directory where agentlauncher.js is located
-*	For Windows: log into the mesh server and download the correct agent for the mesh you want to use and save the mesh agent in the 'agents' subfolder where agentlauncher.js is located
-*	The folder structure should look something like this:
-
-*	agentlauncher\
-*	agentlauncher\agentlauncher.js
-*	agentlauncher\README.md
-*	agentlauncher\agents\
-*	agentlauncher\agents\MeshAgent-MeshGroup.exe
 
 INSTRUCTIONS TO RUN:
 -------------------------------------------------------
