@@ -68,7 +68,7 @@ function run(argv) {
                                         if (err) {
                                             exit(err);
                                         } else {
-                                            launchAgents(currArguments.AGENTS, function (err) {
+                                            launchAgents(currArguments, function (err) {
                                                 if (err) {
                                                     exit(err);
                                                 }
@@ -153,7 +153,7 @@ function consoleHelp() {
 function reportLaunchSummary(index) {
     console.log('Number of Agents Launched: ' + childProcesses.length);
     console.log('Agent Directory: ' + childProcesses[index].directory);
-    console.log('Agent PID: ' + childProcesses[index].child_Process.subprocess.pid);
+    console.log('Agent PID: ' + childProcesses[index].child_Process.pid);
 }
 
 // Queries the os Platform and returns the current platform information
@@ -222,12 +222,15 @@ function removeFiles(path) {
 }
 
 // Loop for launching a specific number of agents
-function launchAgents(numAgents, callback) {
+function launchAgents(currArgs, callback) {
     console.log('launching Agents');
-    for (var i = 0; i < numAgents; i++){
-        if (i === numAgents - 1) { last = true; }
+    for (var i = 0; i < currArgs.AGENTS; i++){
         startAgent(i, function (err, directory) {
             if (err) { callback(err); return; }
+            if (directory === currArgs.AGENTS - 1 && currArgs.TOGGLE === true) {
+                console.log('Starting Toggle Loop!');
+                toggleLoop(currArgs);
+            }
         });
     }
 }
@@ -260,18 +263,46 @@ function startAgent(directory, callback) {
         meshAgent.on('error', (err) => { if (err) { process.stdout.write('Agent exited with error: ' + err + '\n'); }});
         meshAgent.on('close', (code, signal) => { if (code) { process.stdout.write('Agent closed with code: ' + code + '\n'); } if (signal) { process.stdout.write('Agent closed with signal: ' + signal + '\n'); }});
         meshAgent.on('disconnect', () => { process.stdout.write('Agent disconnected' + '\n'); });
-        childProcesses.push({ 'directory': directory, 'child_Process': meshAgent });
+        if (childProcesses[directory]) {
+            childProcesses[directory].child_Process = meshAgent;
+        } else {
+            childProcesses[directory] = { 'directory': directory, 'child_Process': meshAgent };
+        }
         reportLaunchSummary(childProcesses.length - 1);
+        callback(null, directory);
     });
+}
+
+// Random INT generator
+function randomINT(min, max) { return Math.floor(Math.random() * max) + min; }
+
+// Loop timer for toggling agents
+function toggleLoop() {
+    var timer = setInterval(function () {
+        var index = randomINT(0, childProcesses.length);
+        console.log('Toggling agent: ' + index);
+        toggleChildProcess(index);
+    }, randomINT(1000, 10000));
 }
 
 // Kill and restart agent
 function toggleChildProcess(index) {
     var directory = childProcesses[index].directory;
-    childProcesses[index].child_Process.subprocess.kill(childProcesses[index].child_Process.subprocess.pid);
-    childProcesses[index].child_Process.on('exit', function (code, signal) {
-
+    childProcesses[index].child_Process.on('close', function (code, signal) {
+        if (code) { console.log('Exit code received: ' + code); }
+        if (signal) { console.log('Exit signal received: ' + signal); }
+        if (signal === 'SIGTERM') {
+            setTimeout(function () {
+                startAgent(directory, function (err) {
+                    if (err) {
+                        exit(err);
+                    }
+                });
+            }, randomINT(1000, 10000));
+        }
     });
+    console.log('Sending kill signal');
+    childProcesses[index].child_Process.kill();
 }
 
 // Create agent install location
